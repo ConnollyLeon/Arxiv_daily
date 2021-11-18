@@ -2,7 +2,8 @@
 """
 Created on Sat Jul 14 14:24:58 2018
 
-@author: ZZH
+Edited by Liang Peng on Thu Nov 18 09:38:39 2021
+@author: ZZH, Liang Peng
 """
 
 import requests
@@ -21,6 +22,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
 
+# Global Constants
+arxiv_path = '/home/connolly/Documents/arxiv'
+
 
 def get_one_page(url):
     response = requests.get(url)
@@ -38,12 +42,12 @@ def get_one_page(url):
 
 def send_email(title, content):
     # 发送者邮箱
-    sender = 'dailyarxiv@163.com'
+    sender = 'yourqq@qq.com'
     # 发送者的登陆用户名和密码
-    user = 'dailyarxiv@163.com'
-    password = 'aaaaaaaa'  # dailyarxiv123
+    user = 'yourqq@qq.com'
+    password = 'balabala'  # qq的在网页版邮箱设置里找，需要生成
     # 发送者邮箱的SMTP服务器地址
-    smtpserver = 'smtp.163.com'
+    smtpserver = 'smtp.qq.com'
     # 接收者的邮箱地址
     receiver = 'youremail@qq.com'  # receiver 可以是一个list
 
@@ -63,8 +67,7 @@ def send_email(title, content):
     # 主题
     msg['Subject'] = title
 
-    smtp = smtplib.SMTP()  # 实例化SMTP对象
-    smtp.connect(smtpserver, 25)  # （缺省）默认端口是25 也可以根据服务器进行设定
+    smtp = smtplib.SMTP_SSL(smtpserver, 465)  # 实例化SMTP_SSL对象, 填入服务器和端口号, qq邮箱的port为465
     smtp.login(user, password)  # 登陆smtp服务器
     smtp.sendmail(sender, receiver, msg.as_string())  # 发送邮件 ，这里有三个参数
     '''
@@ -74,8 +77,32 @@ def send_email(title, content):
     smtp.quit()
 
 
-def main():
-    url = 'https://arxiv.org/list/cs.DC/pastweek?show=1000'
+def download_papers(selected_pp):
+    if not os.path.exists(arxiv_path + 'selected/' + time.strftime("%Y-%m-%d")):
+        os.makedirs(arxiv_path + 'selected/' + time.strftime("%Y-%m-%d"))
+    for selected_paper_id, selected_paper_title in zip(selected_pp['id'], selected_pp['title']):
+        selected_paper_id = selected_paper_id.split(':', maxsplit=1)[1]
+        selected_paper_title = selected_paper_title.split(':', maxsplit=1)[1]
+        r = requests.get('https://arxiv.org/pdf/' + selected_paper_id)
+        while r.status_code == 403:
+            time.sleep(500 + random.uniform(0, 500))
+            r = requests.get('https://arxiv.org/pdf/' + selected_paper_id)
+        selected_paper_id = selected_paper_id.replace(".", "_")
+        pdfname = selected_paper_title.replace("/", "_")  # pdf名中不能出现/和：
+        pdfname = pdfname.replace("?", "_")
+        pdfname = pdfname.replace("\"", "_")
+        pdfname = pdfname.replace("*", "_")
+        pdfname = pdfname.replace(":", "_")
+        pdfname = pdfname.replace("\n", "")
+        pdfname = pdfname.replace("\r", "")
+        print(arxiv_path + 'selected/' + time.strftime("%Y-%m-%d") + '/%s %s.pdf' % (
+            selected_paper_id, selected_paper_title))
+        with open(arxiv_path + 'selected/' + time.strftime("%Y-%m-%d") + '/%s %s.pdf' % (
+                selected_paper_id, pdfname), "wb") as code:
+            code.write(r.content)
+
+
+def fetch_arxiv(url, key_ws, send_email_flag):
     html = get_one_page(url)
     soup = BeautifulSoup(html, features='html.parser')
     content = soup.dl
@@ -98,7 +125,7 @@ def main():
     name = ['id', 'title', 'authors', 'subjects', 'subject_split']
     paper = pd.DataFrame(columns=name, data=items)
     paper.to_csv(
-        '/home/connolly/Document/arxiv/' + time.strftime("%Y-%m-%d") + '_' + str(len(items)) + '.csv')
+        arxiv_path + '' + time.strftime("%Y-%m-%d") + '_' + str(len(items)) + '.csv')
 
     '''subject split'''
     subject_all = []
@@ -115,23 +142,21 @@ def main():
     subject_file = pd.DataFrame(columns=name, data=subject_items)
     # subject_file = pd.DataFrame.from_dict(subject_cnt, orient='index')
     subject_file.to_csv(
-        '/home/connolly/Document/arxiv/sub_cnt/' + time.strftime("%Y-%m-%d") + '_' + str(len(items)) + '.csv')
+        arxiv_path + 'sub_cnt/' + time.strftime("%Y-%m-%d") + '_' + str(len(items)) + '.csv')
     # subject_file.to_html('subject_file.html')
 
-    '''key_word1 selection'''
-    key_words = ['parallel', 'parallelism', 'distributed', 'framework', 'large-scale']
-    selected_papers = paper[paper['title'].str.contains(key_words[0], case=False)]
-    for key_word in key_words[1:]:
+    '''key_word selection'''
+    selected_papers = paper[paper['title'].str.contains(key_ws[0], case=False)]
+    for key_word in key_ws[1:]:
         selected_paper1 = paper[paper['title'].str.contains(key_word, case=False)]
         selected_papers = pd.concat([selected_papers, selected_paper1], axis=0)
-    selected_papers.to_csv('/home/connolly/Document/arxiv/selected/' + time.strftime("%Y-%m-%d") + '_' + str(
+    selected_papers.to_csv(arxiv_path + 'selected/' + time.strftime("%Y-%m-%d") + '_' + str(
         len(selected_papers)) + '.csv')
 
     '''send email'''
-    # selected_papers.to_html('email.html')
     content = 'Today arxiv has {} new papers in CS.DC area\n\n'.format(
         len(list_title), subject_cnt['Computer Vision and Pattern Recognition (cs.CV)'], len(selected_papers))
-    content += 'Ensure your keywords is ' + str(key_words) + '(case=True). \n\n'
+    content += 'Ensure your keywords is ' + str(key_ws) + '(case=True). \n\n'
     content += 'This is your paperlist.Enjoy! \n\n'
     for i, selected_paper in enumerate(zip(selected_papers['id'], selected_papers['title'], selected_papers['authors'],
                                            selected_papers['subject_split'])):
@@ -141,42 +166,26 @@ def main():
         content1 = content1.split(':', maxsplit=1)[1]
         content += 'https://arxiv.org/abs/' + content1 + '\n\n'
 
-
     content += 'Here is the Research Direction Distribution Report. \n\n'
     for subject_name, times in subject_items:
         content += subject_name + '   ' + str(times) + '\n'
     title = time.strftime("%Y-%m-%d") + ' you have {} papers'.format(len(selected_papers))
-    send_email(title, content)
-    freport = open('/home/connolly/Document/arxiv/report/' + title + '.txt', 'w')
-    freport.write(content)
-    freport.close()
+    if send_email_flag:
+        send_email(title, content)
+    f_report = open(arxiv_path + 'report/' + title + '.txt', 'w')
+    f_report.write(content)
+    f_report.close()
 
     '''dowdload key_word selected papers'''
-    list_subject_split = []
-    if not os.path.exists('/home/connolly/Document/arxiv/selected/' + time.strftime("%Y-%m-%d")):
-        os.makedirs('/home/connolly/Document/arxiv/selected/' + time.strftime("%Y-%m-%d"))
-    for selected_paper_id, selected_paper_title in zip(selected_papers['id'], selected_papers['title']):
-        selected_paper_id = selected_paper_id.split(':', maxsplit=1)[1]
-        selected_paper_title = selected_paper_title.split(':', maxsplit=1)[1]
-        r = requests.get('https://arxiv.org/pdf/' + selected_paper_id)
-        while r.status_code == 403:
-            time.sleep(500 + random.uniform(0, 500))
-            r = requests.get('https://arxiv.org/pdf/' + selected_paper_id)
-        selected_paper_id = selected_paper_id.replace(".", "_")
-        pdfname = selected_paper_title.replace("/", "_")  # pdf名中不能出现/和：
-        pdfname = pdfname.replace("?", "_")
-        pdfname = pdfname.replace("\"", "_")
-        pdfname = pdfname.replace("*", "_")
-        pdfname = pdfname.replace(":", "_")
-        pdfname = pdfname.replace("\n", "")
-        pdfname = pdfname.replace("\r", "")
-        print('/home/connolly/Document/arxiv/selected/' + time.strftime("%Y-%m-%d") + '/%s %s.pdf' % (
-            selected_paper_id, selected_paper_title))
-        with open('/home/connolly/Document/arxiv/selected/' + time.strftime("%Y-%m-%d") + '/%s %s.pdf' % (
-                selected_paper_id, pdfname), "wb") as code:
-            code.write(r.content)
+    download_papers(selected_papers)
 
 
 if __name__ == '__main__':
-    main()
+    # you can replace cs.DC with other fields.
+    url = 'https://arxiv.org/list/cs.DC/pastweek?show=1000'
+
+    # fill your key_words here
+    key_words = ['parallel', 'parallelism', 'distributed', 'framework', 'large-scale']
+    send_email_flag = True
+    fetch_arxiv(url, key_words, send_email_flag)  # Download papers to arxiv_path according to key_words
     time.sleep(1)
