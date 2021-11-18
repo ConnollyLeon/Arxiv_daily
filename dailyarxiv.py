@@ -7,23 +7,31 @@ Edited by Liang Peng on Thu Nov 18 09:38:39 2021
 """
 
 import requests
-import re
 import time
 import pandas as pd
 from bs4 import BeautifulSoup
-import pymysql
 from collections import Counter
 import os
 import random
 
 import smtplib
-from smtplib import SMTP
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.header import Header
+import schedule
 
 # Global Constants
+
+# 下载文章的路径
 arxiv_path = '/home/connolly/Documents/arxiv'
+# 发送者邮箱
+sender = 'yourqq@qq.com'
+# 发送者的登陆用户名和密码
+user = 'yourqq@qq.com'
+password = 'balabala'  # qq的在网页版邮箱设置里找，需要生成
+# 发送者邮箱的SMTP服务器地址
+smtpserver = 'smtp.qq.com'
+# 接收者的邮箱地址
+receiver = 'youremail@qq.com'  # receiver 可以是一个list
 
 
 def get_one_page(url):
@@ -41,16 +49,6 @@ def get_one_page(url):
 
 
 def send_email(title, content):
-    # 发送者邮箱
-    sender = 'yourqq@qq.com'
-    # 发送者的登陆用户名和密码
-    user = 'yourqq@qq.com'
-    password = 'balabala'  # qq的在网页版邮箱设置里找，需要生成
-    # 发送者邮箱的SMTP服务器地址
-    smtpserver = 'smtp.qq.com'
-    # 接收者的邮箱地址
-    receiver = 'youremail@qq.com'  # receiver 可以是一个list
-
     msg = MIMEMultipart('alternative')
 
     part1 = MIMEText(content, 'plain', 'utf-8')
@@ -106,7 +104,6 @@ def fetch_arxiv(url, key_ws, send_email_flag):
     html = get_one_page(url)
     soup = BeautifulSoup(html, features='html.parser')
     content = soup.dl
-    date = soup.find('h3')
     list_ids = content.find_all('a', title='Abstract')
     list_title = content.find_all('div', class_='list-title mathjax')
     list_authors = content.find_all('div', class_='list-authors')
@@ -182,10 +179,19 @@ def fetch_arxiv(url, key_ws, send_email_flag):
 
 if __name__ == '__main__':
     # you can replace cs.DC with other fields.
-    url = 'https://arxiv.org/list/cs.DC/pastweek?show=1000'
+    field = 'cs.DC'
+    url = 'https://arxiv.org/list/' + field + '/pastweek?show=1000'
 
     # fill your key_words here
     key_words = ['parallel', 'parallelism', 'distributed', 'framework', 'large-scale']
+
+    # Whether to send_email
     send_email_flag = True
-    fetch_arxiv(url, key_words, send_email_flag)  # Download papers to arxiv_path according to key_words
-    time.sleep(1)
+
+    # Download papers to arxiv_path according to key_words
+    fetch_arxiv(url, key_words, send_email_flag)
+
+    # set daily fetch
+    schedule.every().day.at("8:00").do(fetch_arxiv, url, key_words, send_email_flag)
+    while True:
+        schedule.run_pending()
